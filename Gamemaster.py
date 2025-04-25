@@ -53,50 +53,61 @@ class SubmissionManager:
             file_paths = group
             player_classes = [self.load(p) for p in group]
             yield list(zip(file_paths, player_classes))  # Zip file_paths and player_classes together
-
-
-
-
-def run_game(player_instances, file_paths):
-    last_moves = [None] * len(player_instances)
-    
-
-    points = [0] * len(player_instances)  # Initialize points list dynamically based on player count
-
-    for _ in range(rounds):
-        current_moves = []
-        for index, player in enumerate(player_instances):
-            try:
-                decision = player.play(list(last_moves))
-            except Exception as e:
-                print(f"Player {index} errored: {e}")
-                decision = False  # If the player has an error, assume defection
-            current_moves.append(decision)
-
-        cooperations = current_moves.count(True)
-
-        if cooperations == len(player_instances):  # All Cooperate
-            currentPoints = [4] * len(player_instances)
-        elif cooperations == len(player_instances) - 1:  # 2 Cooperate, 1 Defects
-            currentPoints = [0 if m else 10 for m in current_moves]
-        elif cooperations == 1:  # One cooperates, two defect
-            currentPoints = [0 if m else 2 for m in current_moves]
-        else:  # No cooperation
-            currentPoints = [1] * len(player_instances)
-
-        for i in range(len(player_instances)):
-            points[i] += currentPoints[i]
-
-        last_moves = current_moves
-
-    max_score = max(points)
-    winners = [i for i, s in enumerate(points) if s == max_score]
-
-    # Use the correct number of file paths
-    for i in winners:
-        print(f"{file_paths[i]} wins!")
-
-    return points, winners
+class GameState:
+    def __init__(self, playerID, prevMoves, scores):
+        self.pmoves = [None]
+        self.score = [None]
+        for i, (pmove, score) in enumerate(zip(prevMoves,scores)):
+            if i == playerID:
+                self.pmoves[0] = pmove
+                self.score[0] = score
+            else:
+                self.pmoves.append(pmove)
+                self.score.append(score)
+    def updateScore(self, playerID, scores):
+        offset = 1
+        for i in range(len(scores)):
+            if i == playerID:
+                self.score[0] = scores[i]
+                offset = 0
+            else:
+                self.score[i + offset] = scores[i]
+class Game:
+    def __init__(self, playerNames):
+        self.pnames = playerNames
+        self.prevMoves = []
+        self.scores = []
+        for i in range(len(playerNames)):
+            self.prevMoves.append([])
+            self.scores.append(0)
+        self.GStates = []
+        for i in range(len(playerNames)):
+            self.GStates.append(GameState(i, self.prevMoves, self.scores))
+    def generateStats(self):
+        stats = []
+        maxScore = max(self.scores)
+        isTie = self.scores.count(maxScore) > 1
+        for prevMove, score in zip(self.prevMoves,self.scores):
+            stats.append({
+                'cooperates': prevMove.count(True),
+                'defects': prevMove.count(False),
+                'wins': 1 if (not isTie) and score == maxScore else 0,
+                'ties': 1 if isTie and score == maxScore else 0,
+                'games': 1
+            })
+        return stats
+    def mergeStats(self,ostats):
+        stats = self.generateStats()
+        for pname, stat in zip(self.pnames, stats):
+            if pname not in ostats:
+                ostats[pname] = {}
+            for key in stat:
+                if key not in ostats[pname]:
+                    ostats[pname][key] = 0
+                ostats[pname][key] += stat[key]
+    def updateScore(self):
+        for i, GState in enumerate(self.GStates):
+            GState.updateScore(i, self.scores)
 
 def print_leaderboard(stats):
     print("\n===  Final Leaderboard  ===")
@@ -111,83 +122,59 @@ def print_leaderboard(stats):
         print(f"{os.path.basename(file_name):<30} {data['wins']:<5} {data['ties']:<5} {coop_pct:>10.2f}%   {defect_pct:>7.2f}%")
     print("=" * 70 + "\n")
 
+def tracking_run_game(game, player_instances, file_paths):
+    # last_moves = [None] * len(player_instances)
+    
+    # points = [0] * len(player_instances)
+    for _ in range(rounds):
+        current_moves = []
+        for index, player in enumerate(player_instances):
+            try:
+                move = player.play()
+            except Exception as e:
+                print(f"Player {index} errored: {e}")
+                move = False
+            current_moves.append(move)
+
+        for pmoves, move in zip(game.prevMoves,current_moves):
+            pmoves.append(move)
+
+        cooperations = current_moves.count(True)
+
+        if cooperations == len(player_instances):
+            currentPoints = [4] * len(player_instances)
+        elif cooperations == len(player_instances) - 1:
+            currentPoints = [0 if m else 10 for m in current_moves]
+        elif cooperations == 1:
+            currentPoints = [0 if m else 5 for m in current_moves]
+        else:
+            currentPoints = [1] * len(player_instances)
+        for pid, pointAdd in enumerate(currentPoints):
+            game.scores[pid] += pointAdd
+        game.updateScore()
+
+
 
 if __name__ == "__main__":
-    submission_dir = './FilePath' #<LK>: Change this with the File Path for the folder where the solution(s) is
+    submission_dir = 'programs' #<LK>: Change this with the File Path for the folder where the solution(s) is
     manager = SubmissionManager(submission_dir)
+    players_per_round = 3
+    all_files_and_classes = [(file_path, cls, cls.programName) for batch in manager.run_batches() for file_path, cls in batch]
 
-    all_files_and_classes = [(file_path, cls) for batch in manager.run_batches() for file_path, cls in batch]
 
-    # Initialize stats tracking
-    stats = {
-        file_path: {
-            'wins': 0,
-            'cooperates': 0,
-            'defects': 0,
-            'ties': 0,
-        } for file_path, _ in all_files_and_classes
-    }
 
-    
-    for trio in combinations(all_files_and_classes, 3):
-        file_paths, player_classes = zip(*trio)
-        players = [cls(index) for index, cls in enumerate(player_classes)]
-
+    stats = {}
+    for trio in combinations(all_files_and_classes, players_per_round):
+        file_paths, player_classes, player_names = zip(*trio)
+        game = Game(player_names)
+        players = [cls(GS) for GS, cls in zip(game.GStates,player_classes)]
         print(f"\n=== Running Game: {file_paths[0]}, {file_paths[1]}, {file_paths[2]} ===")
 
         # Track individual moves for leaderboard
         move_history = {fp: [] for fp in file_paths}
 
-        def tracking_run_game(player_instances, file_paths):
-            last_moves = [None] * len(player_instances)
-            
-            points = [0] * len(player_instances)
 
-            for _ in range(rounds):
-                current_moves = []
-                for index, player in enumerate(player_instances):
-                    try:
-                        move = player.play(list(last_moves))
-                    except Exception as e:
-                        print(f"Player {index} errored: {e}")
-                        move = False
-                    current_moves.append(move)
-
-                for i, move in enumerate(current_moves):
-                    if move is True:
-                        stats[file_paths[i]]['cooperates'] += 1
-                    elif move is False:
-                        stats[file_paths[i]]['defects'] += 1
-
-                cooperations = current_moves.count(True)
-
-                if cooperations == len(player_instances):
-                    currentPoints = [4] * len(player_instances)
-                elif cooperations == len(player_instances) - 1:
-                    currentPoints = [0 if m else 10 for m in current_moves]
-                elif cooperations == 1:
-                    currentPoints = [0 if m else 5 for m in current_moves]
-                else:
-                    currentPoints = [1] * len(player_instances)
-
-                for i in range(len(player_instances)):
-                    points[i] += currentPoints[i]
-
-                last_moves = current_moves
-
-            max_score = max(points)
-            winners = [i for i, s in enumerate(points) if s == max_score]
-
-            if len(winners) > 1:
-                for i in winners:
-                    stats[file_paths[i]]['ties'] += 1
-
-            for i in winners:
-                stats[file_paths[i]]['wins'] += 1
-
-            return points, winners
-
-        points, winners = tracking_run_game(players, file_paths)
-
+        tracking_run_game(game, players, file_paths)
+        game.mergeStats(stats)
     # Print stats at the end
     print_leaderboard(stats)
