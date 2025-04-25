@@ -16,6 +16,7 @@
 import importlib.util
 import os
 import random
+from GameState import GameState
 from itertools import combinations
 
 #These constants are defined to simplify the data sent to each player
@@ -53,25 +54,6 @@ class SubmissionManager:
             file_paths = group
             player_classes = [self.load(p) for p in group]
             yield list(zip(file_paths, player_classes))  # Zip file_paths and player_classes together
-class GameState:
-    def __init__(self, playerID, prevMoves, scores):
-        self.pmoves = [None]
-        self.score = [None]
-        for i, (pmove, score) in enumerate(zip(prevMoves,scores)):
-            if i == playerID:
-                self.pmoves[0] = pmove
-                self.score[0] = score
-            else:
-                self.pmoves.append(pmove)
-                self.score.append(score)
-    def updateScore(self, playerID, scores):
-        offset = 1
-        for i in range(len(scores)):
-            if i == playerID:
-                self.score[0] = scores[i]
-                offset = 0
-            else:
-                self.score[i + offset] = scores[i]
 class Game:
     def __init__(self, playerNames):
         self.pnames = playerNames

@@ -3,7 +3,7 @@
 #   [Basic rundown of strategy]
 
 import random
-import Gamemaster
+from GameState import GameState
 
 # Below is the stub file for your solution
 # GameState is stored in the Gamemaster.Gamestate object
@@ -30,7 +30,7 @@ COOPERATE = True
 class player:
     programName = "mySolution"
     programAuthor = "you"
-    def __init__(self, gameState: Gamemaster.GameState):
+    def __init__(self, gameState: GameState):
         self.gs = gameState
 
     def play(self):
